@@ -8,7 +8,7 @@ Web app mobile-first que muestra el estado **ACTIVO** / **INACTIVO** de una list
   1. Intenta un **ping ICMP** (comando `ping` del sistema).
   2. Si el ping falla o no está disponible (permisos, ICMP bloqueado), hace un **fallback por TCP** intentando conectar a puertos comunes (80, 443, 22, 8080, 3389, 21, 23, 445). Si alguno responde o rechaza la conexión, el host se considera activo.
 - El frontend consulta el estado cada 8 segundos y se puede refrescar manualmente.
-- La lista de IPs se guarda en `data/ips.json` y se puede editar desde la misma web (agregar / eliminar).
+- La lista de IPs se guarda en `data/ips.txt`, un archivo de texto plano, y se puede editar tanto a mano como desde la misma web (agregar / eliminar). Cada IP muestra en el front su nombre nemotécnico en lugar de la dirección cruda.
 
 ## Requisitos
 
@@ -35,10 +35,21 @@ Para cambiar el puerto: `PORT=8080 npm start`.
 
 ## Configurar la lista de IPs
 
-Se puede hacer desde la interfaz web (formulario "Agregar" y botón ✕ para eliminar), o editando directamente `data/ips.json`:
+La lista vive en `data/ips.txt`, un archivo de texto con una IP por línea en el formato:
 
-```json
-[
-  { "id": "uuid", "name": "Router", "ip": "192.168.1.1" }
-]
 ```
+<ip> <nombre nemotécnico>
+```
+
+Por ejemplo:
+
+```
+# Lista de IPs a monitorear
+192.168.1.1 Router
+8.8.8.8 Google DNS
+192.168.1.20 Camara Entrada
+```
+
+- Las líneas vacías o que empiezan con `#` se ignoran.
+- El nombre nemotécnico es lo que se muestra en el front (no la IP cruda).
+- También se puede editar desde la web (formulario "Agregar" y botón ✕ para eliminar). Nota: guardar desde la web reescribe el archivo completo, por lo que se conserva el encabezado de comentario estándar pero se pierde cualquier comentario adicional que se haya agregado a mano.

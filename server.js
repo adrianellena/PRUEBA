@@ -2,12 +2,15 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs/promises');
 const net = require('net');
-const crypto = require('crypto');
 const ping = require('ping');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const DATA_FILE = path.join(__dirname, 'data', 'ips.json');
+const DATA_FILE = path.join(__dirname, 'data', 'ips.txt');
+const FILE_HEADER =
+  '# Lista de IPs a monitorear\n' +
+  '# Formato: <ip> <nombre nemotécnico>\n' +
+  '# Una IP por línea. Las líneas vacías o que empiezan con # se ignoran.\n';
 
 // Puertos TCP comunes usados como respaldo cuando el ping ICMP
 // no está disponible o el host lo tiene bloqueado.
@@ -21,10 +24,25 @@ const IPV4_REGEX =
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+function parseLine(line) {
+  const trimmed = line.trim();
+  if (!trimmed || trimmed.startsWith('#')) return null;
+
+  const match = trimmed.match(/^(\S+)\s+(.+)$/);
+  const ip = match ? match[1] : trimmed;
+  const name = match ? match[2].trim() : ip;
+
+  if (!IPV4_REGEX.test(ip)) return null;
+  return { ip, name };
+}
+
 async function loadIps() {
   try {
     const raw = await fs.readFile(DATA_FILE, 'utf-8');
-    return JSON.parse(raw);
+    return raw
+      .split('\n')
+      .map(parseLine)
+      .filter(Boolean);
   } catch (err) {
     if (err.code === 'ENOENT') return [];
     throw err;
@@ -33,7 +51,8 @@ async function loadIps() {
 
 async function saveIps(ips) {
   await fs.mkdir(path.dirname(DATA_FILE), { recursive: true });
-  await fs.writeFile(DATA_FILE, JSON.stringify(ips, null, 2));
+  const body = ips.map((entry) => `${entry.ip} ${entry.name}`).join('\n');
+  await fs.writeFile(DATA_FILE, FILE_HEADER + body + (body ? '\n' : ''));
 }
 
 function tcpProbe(host, port, timeout) {
@@ -120,7 +139,6 @@ app.post('/api/ips', async (req, res) => {
   }
 
   const newEntry = {
-    id: crypto.randomUUID(),
     name: trimmedName || trimmedIp,
     ip: trimmedIp,
   };
@@ -130,9 +148,9 @@ app.post('/api/ips', async (req, res) => {
   res.status(201).json(newEntry);
 });
 
-app.delete('/api/ips/:id', async (req, res) => {
+app.delete('/api/ips/:ip', async (req, res) => {
   const ips = await loadIps();
-  const filtered = ips.filter((entry) => entry.id !== req.params.id);
+  const filtered = ips.filter((entry) => entry.ip !== req.params.ip);
 
   if (filtered.length === ips.length) {
     return res.status(404).json({ error: 'IP no encontrada' });

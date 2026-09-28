@@ -40,7 +40,7 @@ function renderList(items) {
     li.querySelector('.ip-name').textContent = item.name;
     li.querySelector('.ip-address').textContent = item.ip;
     li.querySelector('.status-badge').textContent = item.status;
-    li.querySelector('.delete-btn').addEventListener('click', () => deleteIp(item.id));
+    li.querySelector('.delete-btn').addEventListener('click', () => deleteIp(item.ip));
 
     listEl.appendChild(li);
   }
@@ -67,9 +67,9 @@ async function fetchStatuses({ showSpinner = true } = {}) {
   }
 }
 
-async function deleteIp(id) {
+async function deleteIp(ip) {
   try {
-    const res = await fetch(`/api/ips/${id}`, { method: 'DELETE' });
+    const res = await fetch(`/api/ips/${encodeURIComponent(ip)}`, { method: 'DELETE' });
     if (!res.ok && res.status !== 204) throw new Error('No se pudo eliminar');
     await fetchStatuses({ showSpinner: false });
   } catch (err) {

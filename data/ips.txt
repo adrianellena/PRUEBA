@@ -1,0 +1,5 @@
+# Lista de IPs a monitorear
+# Formato: <ip> <nombre nemotécnico>
+# Una IP por línea. Las líneas vacías o que empiezan con # se ignoran.
+192.168.1.1 Router
+8.8.8.8 Google DNS
