@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <meta name="theme-color" content="#0f172a" />
+  <title>Estado de IPs</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>Estado de IPs</h1>
+    <div class="topbar-meta">
+      <span id="last-updated">Actualizando…</span>
+      <button id="refresh-btn" class="icon-btn" title="Actualizar ahora" aria-label="Actualizar ahora">⟳</button>
+    </div>
+  </header>
+
+  <main>
+    <ul id="ip-list" class="ip-list" aria-live="polite"></ul>
+    <p id="empty-state" class="empty-state" hidden>
+      No hay direcciones IP cargadas. Agregá una con el formulario de abajo.
+    </p>
+  </main>
+
+  <form id="add-form" class="add-form">
+    <input
+      id="input-name"
+      type="text"
+      placeholder="Nombre (opcional)"
+      autocomplete="off"
+      maxlength="40"
+    />
+    <input
+      id="input-ip"
+      type="text"
+      inputmode="decimal"
+      placeholder="Dirección IP, ej: 192.168.1.10"
+      autocomplete="off"
+      required
+    />
+    <button type="submit">Agregar</button>
+  </form>
+  <p id="form-error" class="form-error" hidden></p>
+
+  <script src="app.js"></script>
+</body>
+</html>
