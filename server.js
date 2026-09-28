@@ -7,6 +7,7 @@ const ping = require('ping');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const DATA_FILE = path.join(__dirname, 'data', 'ips.txt');
+const LAST_SEEN_FILE = path.join(__dirname, 'data', 'last-seen.json');
 const FILE_HEADER =
   '# Lista de IPs a monitorear\n' +
   '# Formato: <ip> <nombre nemotécnico>\n' +
@@ -53,6 +54,24 @@ async function saveIps(ips) {
   await fs.mkdir(path.dirname(DATA_FILE), { recursive: true });
   const body = ips.map((entry) => `${entry.ip} ${entry.name}`).join('\n');
   await fs.writeFile(DATA_FILE, FILE_HEADER + body + (body ? '\n' : ''));
+}
+
+let lastSeenCache = null;
+
+async function loadLastSeen() {
+  if (lastSeenCache) return lastSeenCache;
+  try {
+    const raw = await fs.readFile(LAST_SEEN_FILE, 'utf-8');
+    lastSeenCache = JSON.parse(raw);
+  } catch (err) {
+    lastSeenCache = {};
+  }
+  return lastSeenCache;
+}
+
+async function saveLastSeen() {
+  await fs.mkdir(path.dirname(LAST_SEEN_FILE), { recursive: true });
+  await fs.writeFile(LAST_SEEN_FILE, JSON.stringify(lastSeenCache, null, 2));
 }
 
 function tcpProbe(host, port, timeout) {
@@ -110,12 +129,22 @@ async function checkHost(ip) {
 app.get('/api/ips', async (req, res) => {
   try {
     const ips = await loadIps();
+    const lastSeen = await loadLastSeen();
     const results = await Promise.all(
       ips.map(async (entry) => {
         const check = await checkHost(entry.ip);
-        return { ...entry, ...check, checkedAt: new Date().toISOString() };
+        if (check.status === 'ACTIVO') {
+          lastSeen[entry.ip] = new Date().toISOString();
+        }
+        return {
+          ...entry,
+          ...check,
+          lastOnline: lastSeen[entry.ip] || null,
+          checkedAt: new Date().toISOString(),
+        };
       })
     );
+    await saveLastSeen();
     res.json(results);
   } catch (err) {
     console.error(err);
@@ -157,6 +186,13 @@ app.delete('/api/ips/:ip', async (req, res) => {
   }
 
   await saveIps(filtered);
+
+  const lastSeen = await loadLastSeen();
+  if (req.params.ip in lastSeen) {
+    delete lastSeen[req.params.ip];
+    await saveLastSeen();
+  }
+
   res.status(204).end();
 });
 

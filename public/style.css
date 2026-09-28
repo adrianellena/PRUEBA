@@ -103,8 +103,26 @@ main {
   gap: 12px;
 }
 
+.status-icon {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+}
+
+.status-icon.activo {
+  background: var(--active);
+  box-shadow: 0 0 8px 1px rgba(34, 197, 94, 0.55);
+}
+
+.status-icon.inactivo {
+  background: var(--inactive);
+  box-shadow: 0 0 8px 1px rgba(239, 68, 68, 0.45);
+}
+
 .ip-info {
   min-width: 0;
+  flex: 1 1 auto;
 }
 
 .ip-name {
@@ -119,6 +137,12 @@ main {
   font-size: 0.85rem;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
+}
+
+.last-seen {
+  font-size: 0.75rem;
+  color: var(--inactive);
+  margin-top: 2px;
 }
 
 .ip-actions {

@@ -16,6 +16,15 @@ function formatTime(date) {
   return date.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
+function formatLastOnline(isoString) {
+  const date = new Date(isoString);
+  const sameDay = date.toDateString() === new Date().toDateString();
+  const dateOpts = sameDay
+    ? { hour: '2-digit', minute: '2-digit', second: '2-digit' }
+    : { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' };
+  return date.toLocaleString('es-AR', dateOpts);
+}
+
 function renderList(items) {
   listEl.innerHTML = '';
   emptyStateEl.hidden = items.length > 0;
@@ -24,12 +33,15 @@ function renderList(items) {
     const li = document.createElement('li');
     li.className = 'ip-card';
 
-    const statusClass = item.status === 'ACTIVO' ? 'activo' : 'inactivo';
+    const isOnline = item.status === 'ACTIVO';
+    const statusClass = isOnline ? 'activo' : 'inactivo';
 
     li.innerHTML = `
+      <span class="status-icon ${statusClass}" title="${item.status}" aria-hidden="true"></span>
       <div class="ip-info">
         <div class="ip-name"></div>
         <div class="ip-address"></div>
+        <div class="last-seen"></div>
       </div>
       <div class="ip-actions">
         <span class="status-badge ${statusClass}"></span>
@@ -40,6 +52,16 @@ function renderList(items) {
     li.querySelector('.ip-name').textContent = item.name;
     li.querySelector('.ip-address').textContent = item.ip;
     li.querySelector('.status-badge').textContent = item.status;
+
+    const lastSeenEl = li.querySelector('.last-seen');
+    if (!isOnline) {
+      lastSeenEl.textContent = item.lastOnline
+        ? `Último online: ${formatLastOnline(item.lastOnline)}`
+        : 'Sin registro de actividad';
+    } else {
+      lastSeenEl.remove();
+    }
+
     li.querySelector('.delete-btn').addEventListener('click', () => deleteIp(item.ip));
 
     listEl.appendChild(li);
