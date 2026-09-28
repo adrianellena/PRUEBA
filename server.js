@@ -2,6 +2,7 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs/promises');
 const net = require('net');
+const crypto = require('crypto');
 const ping = require('ping');
 
 const app = express();
@@ -19,9 +20,52 @@ const FALLBACK_PORTS = [80, 443, 22, 8080, 3389, 21, 23, 445];
 const PING_TIMEOUT_SECONDS = 2;
 const TCP_TIMEOUT_MS = 1500;
 
+// Si es "false", la lista de IPs queda de solo lectura: se puede ver el
+// estado pero no agregar ni eliminar direcciones (ni desde la web ni la API).
+const ALLOW_IP_EDITS = (process.env.ALLOW_IP_EDITS ?? 'true').toLowerCase() !== 'false';
+
 const IPV4_REGEX =
   /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
 
+const AUTH_USER = process.env.AUTH_USER || 'admin';
+let AUTH_PASSWORD = process.env.AUTH_PASSWORD;
+if (!AUTH_PASSWORD) {
+  AUTH_PASSWORD = crypto.randomBytes(9).toString('base64url');
+  console.log('======================================================');
+  console.log('AUTH_PASSWORD no definida: se generó una contraseña temporal.');
+  console.log(`  Usuario:    ${AUTH_USER}`);
+  console.log(`  Contraseña: ${AUTH_PASSWORD}`);
+  console.log('Para fijar credenciales propias (recomendado), definí las');
+  console.log('variables de entorno AUTH_USER y AUTH_PASSWORD antes de iniciar.');
+  console.log('======================================================');
+}
+
+function timingSafeStringEqual(a, b) {
+  const bufA = crypto.createHash('sha256').update(String(a)).digest();
+  const bufB = crypto.createHash('sha256').update(String(b)).digest();
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
+function requireAuth(req, res, next) {
+  const header = req.headers.authorization || '';
+  const [scheme, encoded] = header.split(' ');
+
+  if (scheme === 'Basic' && encoded) {
+    const decoded = Buffer.from(encoded, 'base64').toString('utf-8');
+    const sepIndex = decoded.indexOf(':');
+    const user = sepIndex === -1 ? decoded : decoded.slice(0, sepIndex);
+    const pass = sepIndex === -1 ? '' : decoded.slice(sepIndex + 1);
+
+    if (timingSafeStringEqual(user, AUTH_USER) && timingSafeStringEqual(pass, AUTH_PASSWORD)) {
+      return next();
+    }
+  }
+
+  res.set('WWW-Authenticate', 'Basic realm="Estado de IPs"');
+  res.status(401).send('Autenticación requerida');
+}
+
+app.use(requireAuth);
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -126,6 +170,10 @@ async function checkHost(ip) {
   };
 }
 
+app.get('/api/config', (req, res) => {
+  res.json({ editableIps: ALLOW_IP_EDITS });
+});
+
 app.get('/api/ips', async (req, res) => {
   try {
     const ips = await loadIps();
@@ -153,6 +201,10 @@ app.get('/api/ips', async (req, res) => {
 });
 
 app.post('/api/ips', async (req, res) => {
+  if (!ALLOW_IP_EDITS) {
+    return res.status(403).json({ error: 'La edición de la lista de IPs está deshabilitada' });
+  }
+
   const { name, ip } = req.body || {};
 
   if (!ip || typeof ip !== 'string' || !IPV4_REGEX.test(ip.trim())) {
@@ -178,6 +230,10 @@ app.post('/api/ips', async (req, res) => {
 });
 
 app.delete('/api/ips/:ip', async (req, res) => {
+  if (!ALLOW_IP_EDITS) {
+    return res.status(403).json({ error: 'La edición de la lista de IPs está deshabilitada' });
+  }
+
   const ips = await loadIps();
   const filtered = ips.filter((entry) => entry.ip !== req.params.ip);
 

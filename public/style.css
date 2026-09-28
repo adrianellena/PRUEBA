@@ -72,9 +72,50 @@ body {
   animation: spin 0.7s linear infinite;
 }
 
+.icon-btn.muted {
+  opacity: 0.45;
+}
+
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
+}
+
+.alarm-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 16px 4px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(239, 68, 68, 0.18);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: var(--inactive);
+  font-weight: 700;
+  font-size: 0.9rem;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.alarm-banner[hidden] {
+  display: none;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+.alarm-banner button {
+  flex-shrink: 0;
+  background: var(--inactive);
+  color: #2a0a0a;
+  border: none;
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
 }
 
 main {
@@ -204,6 +245,10 @@ main {
   text-align: center;
   color: var(--text-muted);
   padding: 32px 16px;
+}
+
+.add-form[hidden] {
+  display: none;
 }
 
 .add-form {

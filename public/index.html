@@ -12,9 +12,15 @@
     <h1>Estado de IPs</h1>
     <div class="topbar-meta">
       <span id="last-updated">Actualizando…</span>
+      <button id="alarm-toggle" class="icon-btn" title="Activar/desactivar alarma sonora" aria-label="Activar/desactivar alarma sonora" aria-pressed="true">🔔</button>
       <button id="refresh-btn" class="icon-btn" title="Actualizar ahora" aria-label="Actualizar ahora">⟳</button>
     </div>
   </header>
+
+  <div id="alarm-banner" class="alarm-banner" hidden>
+    <span>⚠ Una IP pasó a OFFLINE</span>
+    <button id="alarm-silence-btn">Silenciar</button>
+  </div>
 
   <main>
     <ul id="ip-list" class="ip-list" aria-live="polite"></ul>

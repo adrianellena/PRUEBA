@@ -1,4 +1,6 @@
 const REFRESH_INTERVAL_MS = 8000;
+const ALARM_BEEP_INTERVAL_MS = 1200;
+const ALARM_PREF_KEY = 'ipstatus.alarmEnabled';
 
 const listEl = document.getElementById('ip-list');
 const emptyStateEl = document.getElementById('empty-state');
@@ -8,9 +10,95 @@ const form = document.getElementById('add-form');
 const nameInput = document.getElementById('input-name');
 const ipInput = document.getElementById('input-ip');
 const formError = document.getElementById('form-error');
+const alarmToggleBtn = document.getElementById('alarm-toggle');
+const alarmBanner = document.getElementById('alarm-banner');
+const alarmSilenceBtn = document.getElementById('alarm-silence-btn');
 
 let refreshTimer = null;
 let isFetching = false;
+let appConfig = { editableIps: true };
+let previousStatuses = null;
+let alarmEnabled = localStorage.getItem(ALARM_PREF_KEY) !== 'false';
+let alarmActive = false;
+let alarmIntervalId = null;
+let audioCtx = null;
+
+function updateAlarmToggleUI() {
+  alarmToggleBtn.textContent = alarmEnabled ? '🔔' : '🔕';
+  alarmToggleBtn.classList.toggle('muted', !alarmEnabled);
+  alarmToggleBtn.setAttribute('aria-pressed', String(alarmEnabled));
+}
+
+function ensureAudioContext() {
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  if (!Ctx) return null;
+  if (!audioCtx) audioCtx = new Ctx();
+  if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+  return audioCtx;
+}
+
+function beep() {
+  const ctx = ensureAudioContext();
+  if (!ctx) return;
+  try {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'square';
+    osc.frequency.value = 880;
+    gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.3, ctx.currentTime + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.35);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.4);
+  } catch (err) {
+    console.error('No se pudo reproducir la alarma', err);
+  }
+}
+
+function startAlarm() {
+  if (alarmActive) return;
+  alarmActive = true;
+  alarmBanner.hidden = false;
+  beep();
+  alarmIntervalId = setInterval(beep, ALARM_BEEP_INTERVAL_MS);
+}
+
+function stopAlarm() {
+  alarmActive = false;
+  alarmBanner.hidden = true;
+  if (alarmIntervalId) {
+    clearInterval(alarmIntervalId);
+    alarmIntervalId = null;
+  }
+}
+
+function checkOfflineTransitions(items) {
+  const current = new Map(items.map((item) => [item.ip, item.status]));
+
+  if (previousStatuses) {
+    for (const [ip, status] of current) {
+      const prevStatus = previousStatuses.get(ip);
+      if (prevStatus === 'ACTIVO' && status === 'INACTIVO' && alarmEnabled) {
+        startAlarm();
+      }
+    }
+  }
+
+  previousStatuses = current;
+}
+
+alarmToggleBtn.addEventListener('click', () => {
+  alarmEnabled = !alarmEnabled;
+  localStorage.setItem(ALARM_PREF_KEY, String(alarmEnabled));
+  updateAlarmToggleUI();
+  if (!alarmEnabled) stopAlarm();
+  ensureAudioContext();
+});
+
+alarmSilenceBtn.addEventListener('click', stopAlarm);
+
+updateAlarmToggleUI();
 
 function formatTime(date) {
   return date.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -62,7 +150,12 @@ function renderList(items) {
       lastSeenEl.remove();
     }
 
-    li.querySelector('.delete-btn').addEventListener('click', () => deleteIp(item.ip));
+    const deleteBtn = li.querySelector('.delete-btn');
+    if (appConfig.editableIps) {
+      deleteBtn.addEventListener('click', () => deleteIp(item.ip));
+    } else {
+      deleteBtn.remove();
+    }
 
     listEl.appendChild(li);
   }
@@ -78,6 +171,7 @@ async function fetchStatuses({ showSpinner = true } = {}) {
     const res = await fetch('/api/ips');
     if (!res.ok) throw new Error('Error al obtener el estado');
     const data = await res.json();
+    checkOfflineTransitions(data);
     renderList(data);
     lastUpdatedEl.textContent = `Actualizado ${formatTime(new Date())}`;
   } catch (err) {
@@ -87,6 +181,16 @@ async function fetchStatuses({ showSpinner = true } = {}) {
     isFetching = false;
     if (showSpinner) refreshBtn.classList.remove('spinning');
   }
+}
+
+async function loadConfig() {
+  try {
+    const res = await fetch('/api/config');
+    if (res.ok) appConfig = await res.json();
+  } catch (err) {
+    console.error(err);
+  }
+  form.hidden = !appConfig.editableIps;
 }
 
 async function deleteIp(ip) {
@@ -153,5 +257,5 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
-fetchStatuses();
+loadConfig().then(fetchStatuses);
 startAutoRefresh();
