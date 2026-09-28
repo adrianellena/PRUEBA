@@ -2,8 +2,8 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs/promises');
 const net = require('net');
-const crypto = require('crypto');
 const ping = require('ping');
+const pam = require('authenticate-pam');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -27,26 +27,62 @@ const ALLOW_IP_EDITS = (process.env.ALLOW_IP_EDITS ?? 'true').toLowerCase() !== 
 const IPV4_REGEX =
   /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
 
-const AUTH_USER = process.env.AUTH_USER || 'admin';
-let AUTH_PASSWORD = process.env.AUTH_PASSWORD;
-if (!AUTH_PASSWORD) {
-  AUTH_PASSWORD = crypto.randomBytes(9).toString('base64url');
-  console.log('======================================================');
-  console.log('AUTH_PASSWORD no definida: se generó una contraseña temporal.');
-  console.log(`  Usuario:    ${AUTH_USER}`);
-  console.log(`  Contraseña: ${AUTH_PASSWORD}`);
-  console.log('Para fijar credenciales propias (recomendado), definí las');
-  console.log('variables de entorno AUTH_USER y AUTH_PASSWORD antes de iniciar.');
-  console.log('======================================================');
+// Servicio PAM a usar (ver /etc/pam.d/). "login" es el stack estándar de
+// autenticación de Ubuntu; se puede apuntar a un servicio propio si se define uno.
+const PAM_SERVICE_NAME = process.env.PAM_SERVICE_NAME || 'login';
+
+// Lista opcional de usuarios del sistema habilitados a entrar, separados por
+// coma (ej: "operador,juan"). Si no se define, cualquier usuario de Ubuntu
+// con contraseña válida puede ingresar.
+const PAM_ALLOWED_USERS = (process.env.PAM_ALLOWED_USERS || '')
+  .split(',')
+  .map((u) => u.trim())
+  .filter(Boolean);
+
+// Protección básica contra fuerza bruta: bloquea una IP luego de varios
+// intentos fallidos seguidos, además del retardo que ya aplica PAM.
+const MAX_FAILED_ATTEMPTS = 5;
+const LOCKOUT_WINDOW_MS = 15 * 60 * 1000;
+const loginAttempts = new Map();
+
+function isLockedOut(ip) {
+  const entry = loginAttempts.get(ip);
+  if (!entry) return false;
+  if (Date.now() - entry.firstAttempt > LOCKOUT_WINDOW_MS) {
+    loginAttempts.delete(ip);
+    return false;
+  }
+  return entry.count >= MAX_FAILED_ATTEMPTS;
 }
 
-function timingSafeStringEqual(a, b) {
-  const bufA = crypto.createHash('sha256').update(String(a)).digest();
-  const bufB = crypto.createHash('sha256').update(String(b)).digest();
-  return crypto.timingSafeEqual(bufA, bufB);
+function registerFailedAttempt(ip) {
+  const entry = loginAttempts.get(ip);
+  if (!entry || Date.now() - entry.firstAttempt > LOCKOUT_WINDOW_MS) {
+    loginAttempts.set(ip, { count: 1, firstAttempt: Date.now() });
+  } else {
+    entry.count += 1;
+  }
 }
 
-function requireAuth(req, res, next) {
+function clearFailedAttempts(ip) {
+  loginAttempts.delete(ip);
+}
+
+function pamAuthenticate(user, pass) {
+  return new Promise((resolve) => {
+    pam.authenticate(user, pass, (err) => resolve(!err), {
+      serviceName: PAM_SERVICE_NAME,
+      remoteHost: 'ip-status-monitor',
+    });
+  });
+}
+
+async function requireAuth(req, res, next) {
+  if (isLockedOut(req.ip)) {
+    res.set('Retry-After', String(Math.ceil(LOCKOUT_WINDOW_MS / 1000)));
+    return res.status(429).send('Demasiados intentos fallidos. Probá de nuevo más tarde.');
+  }
+
   const header = req.headers.authorization || '';
   const [scheme, encoded] = header.split(' ');
 
@@ -56,11 +92,15 @@ function requireAuth(req, res, next) {
     const user = sepIndex === -1 ? decoded : decoded.slice(0, sepIndex);
     const pass = sepIndex === -1 ? '' : decoded.slice(sepIndex + 1);
 
-    if (timingSafeStringEqual(user, AUTH_USER) && timingSafeStringEqual(pass, AUTH_PASSWORD)) {
+    const allowedByList = PAM_ALLOWED_USERS.length === 0 || PAM_ALLOWED_USERS.includes(user);
+
+    if (user && pass && allowedByList && (await pamAuthenticate(user, pass))) {
+      clearFailedAttempts(req.ip);
       return next();
     }
   }
 
+  registerFailedAttempt(req.ip);
   res.set('WWW-Authenticate', 'Basic realm="Estado de IPs"');
   res.status(401).send('Autenticación requerida');
 }
@@ -254,4 +294,8 @@ app.delete('/api/ips/:ip', async (req, res) => {
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`IP Status Monitor escuchando en http://0.0.0.0:${PORT}`);
+  console.log(
+    `Autenticación: usuarios del sistema (PAM, servicio "${PAM_SERVICE_NAME}")` +
+      (PAM_ALLOWED_USERS.length ? ` — permitidos: ${PAM_ALLOWED_USERS.join(', ')}` : ' — cualquier usuario válido')
+  );
 });
