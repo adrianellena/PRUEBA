@@ -3,12 +3,13 @@ const path = require('path');
 const fs = require('fs/promises');
 const net = require('net');
 const ping = require('ping');
-const pam = require('authenticate-pam');
+const argon2 = require('argon2');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const DATA_FILE = path.join(__dirname, 'data', 'ips.txt');
 const LAST_SEEN_FILE = path.join(__dirname, 'data', 'last-seen.json');
+const USERS_FILE = path.join(__dirname, 'data', 'users.txt');
 const FILE_HEADER =
   '# Lista de IPs a monitorear\n' +
   '# Formato: <ip> <nombre nemotécnico>\n' +
@@ -27,20 +28,13 @@ const ALLOW_IP_EDITS = (process.env.ALLOW_IP_EDITS ?? 'true').toLowerCase() !== 
 const IPV4_REGEX =
   /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
 
-// Servicio PAM a usar (ver /etc/pam.d/). "login" es el stack estándar de
-// autenticación de Ubuntu; se puede apuntar a un servicio propio si se define uno.
-const PAM_SERVICE_NAME = process.env.PAM_SERVICE_NAME || 'login';
-
-// Lista opcional de usuarios del sistema habilitados a entrar, separados por
-// coma (ej: "operador,juan"). Si no se define, cualquier usuario de Ubuntu
-// con contraseña válida puede ingresar.
-const PAM_ALLOWED_USERS = (process.env.PAM_ALLOWED_USERS || '')
-  .split(',')
-  .map((u) => u.trim())
-  .filter(Boolean);
+// Hash "señuelo" fijo: se usa para verificar contra un usuario inexistente,
+// así el tiempo de respuesta no delata si el usuario existe o no en el archivo.
+const DUMMY_HASH =
+  '$argon2id$v=19$m=65536,p=4,t=3$QUVeBlaGFHHKR9crBllO/g$0UO+I1V1DI0eqEnvIFTxcfm4ScocGuR6PJY6ufo32jQ';
 
 // Protección básica contra fuerza bruta: bloquea una IP luego de varios
-// intentos fallidos seguidos, además del retardo que ya aplica PAM.
+// intentos fallidos seguidos.
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_WINDOW_MS = 15 * 60 * 1000;
 const loginAttempts = new Map();
@@ -68,13 +62,47 @@ function clearFailedAttempts(ip) {
   loginAttempts.delete(ip);
 }
 
-function pamAuthenticate(user, pass) {
-  return new Promise((resolve) => {
-    pam.authenticate(user, pass, (err) => resolve(!err), {
-      serviceName: PAM_SERVICE_NAME,
-      remoteHost: 'ip-status-monitor',
-    });
-  });
+function parseUserLine(line) {
+  const trimmed = line.trim();
+  if (!trimmed || trimmed.startsWith('#')) return null;
+
+  const sepIndex = trimmed.indexOf(':');
+  if (sepIndex === -1) return null;
+
+  const username = trimmed.slice(0, sepIndex).trim();
+  const hash = trimmed.slice(sepIndex + 1).trim();
+  if (!username || !hash) return null;
+
+  return [username, hash];
+}
+
+async function loadUsers() {
+  try {
+    const raw = await fs.readFile(USERS_FILE, 'utf-8');
+    return new Map(raw.split('\n').map(parseUserLine).filter(Boolean));
+  } catch (err) {
+    if (err.code === 'ENOENT') return new Map();
+    throw err;
+  }
+}
+
+async function verifyCredentials(username, password) {
+  const users = await loadUsers();
+  const hash = users.get(username);
+
+  if (!hash) {
+    // Igual hacemos una verificación (contra un hash señuelo) para que el
+    // tiempo de respuesta sea similar al de un usuario que sí existe.
+    await argon2.verify(DUMMY_HASH, password).catch(() => false);
+    return false;
+  }
+
+  try {
+    return await argon2.verify(hash, password);
+  } catch (err) {
+    console.error(`Hash inválido para el usuario "${username}" en ${USERS_FILE}:`, err.message);
+    return false;
+  }
 }
 
 async function requireAuth(req, res, next) {
@@ -92,9 +120,7 @@ async function requireAuth(req, res, next) {
     const user = sepIndex === -1 ? decoded : decoded.slice(0, sepIndex);
     const pass = sepIndex === -1 ? '' : decoded.slice(sepIndex + 1);
 
-    const allowedByList = PAM_ALLOWED_USERS.length === 0 || PAM_ALLOWED_USERS.includes(user);
-
-    if (user && pass && allowedByList && (await pamAuthenticate(user, pass))) {
+    if (user && pass && (await verifyCredentials(user, pass))) {
       clearFailedAttempts(req.ip);
       return next();
     }
@@ -292,10 +318,17 @@ app.delete('/api/ips/:ip', async (req, res) => {
   res.status(204).end();
 });
 
-app.listen(PORT, '0.0.0.0', () => {
+app.listen(PORT, '0.0.0.0', async () => {
   console.log(`IP Status Monitor escuchando en http://0.0.0.0:${PORT}`);
-  console.log(
-    `Autenticación: usuarios del sistema (PAM, servicio "${PAM_SERVICE_NAME}")` +
-      (PAM_ALLOWED_USERS.length ? ` — permitidos: ${PAM_ALLOWED_USERS.join(', ')}` : ' — cualquier usuario válido')
-  );
+
+  const users = await loadUsers();
+  if (users.size === 0) {
+    console.log('======================================================');
+    console.log(`No hay usuarios configurados en ${USERS_FILE}.`);
+    console.log('Nadie va a poder ingresar hasta que crees uno con:');
+    console.log('  node scripts/manage-users.js add <usuario>');
+    console.log('======================================================');
+  } else {
+    console.log(`Autenticación: ${users.size} usuario(s) cargado(s) desde ${USERS_FILE}`);
+  }
 });

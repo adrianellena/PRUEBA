@@ -1,3 +1,4 @@
 node_modules/
 npm-debug.log*
 data/last-seen.json
+data/users.txt
