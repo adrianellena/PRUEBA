@@ -4,9 +4,9 @@ Web app mobile-first que muestra el estado **ACTIVO** / **INACTIVO** de una list
 
 ## Cómo funciona
 
-- Un servidor Node.js (Express) chequea cada IP:
-  1. Intenta un **ping ICMP** (comando `ping` del sistema).
-  2. Si el ping falla o no está disponible (permisos, ICMP bloqueado), hace un **fallback por TCP** intentando conectar a puertos comunes (80, 443, 22, 8080, 3389, 21, 23, 445). Si alguno responde o rechaza la conexión, el host se considera activo.
+- Un servidor Node.js (Express) chequea cada entrada de dos formas posibles:
+  1. **Chequeo general de host** (sin puerto puntual): intenta un **ping ICMP** (comando `ping` del sistema) y, si falla o no está disponible, hace un **fallback por TCP** contra puertos comunes (80, 443, 22, 8080, 3389, 21, 23, 445). Si alguno responde o rechaza la conexión, el host se considera activo.
+  2. **Chequeo de un puerto puntual** (cuando se indica `ip:puerto`, ver más abajo): se testea *ese* puerto TCP específico — ACTIVO sólo si acepta la conexión, INACTIVO si la rechaza, da timeout o el host no responde.
 - El frontend consulta el estado cada 8 segundos y se puede refrescar manualmente.
 - La lista de IPs se guarda en `data/ips.txt`, un archivo de texto plano, y se puede editar tanto a mano como desde la misma web (agregar / eliminar), salvo que se desactive con `ALLOW_IP_EDITS` (ver más abajo). Cada IP muestra en el front su nombre nemotécnico en lugar de la dirección cruda.
 - Si una IP pasa de ACTIVO a INACTIVO, suena una alarma sonora en bucle hasta que se silencia manualmente. Se puede desactivar por completo con el botón 🔔/🔕 (la preferencia queda guardada en el navegador).
@@ -69,10 +69,10 @@ Para cambiar el puerto: `PORT=8080 npm start`.
 
 ## Configurar la lista de IPs
 
-La lista vive en `data/ips.txt`, un archivo de texto con una IP por línea en el formato:
+La lista vive en `data/ips.txt`, un archivo de texto con una entrada por línea en el formato:
 
 ```
-<ip> <nombre nemotécnico>
+<ip>[:puerto] <nombre nemotécnico>
 ```
 
 Por ejemplo:
@@ -82,11 +82,22 @@ Por ejemplo:
 192.168.1.1 Router
 8.8.8.8 Google DNS
 192.168.1.20 Camara Entrada
+10.0.0.5:20000 Servicio de Backups
 ```
 
 - Las líneas vacías o que empiezan con `#` se ignoran.
 - El nombre nemotécnico es lo que se muestra en el front (no la IP cruda).
 - También se puede editar desde la web (formulario "Agregar" y botón ✕ para eliminar). Nota: guardar desde la web reescribe el archivo completo, por lo que se conserva el encabezado de comentario estándar pero se pierde cualquier comentario adicional que se haya agregado a mano.
+- Una misma IP puede tener varias entradas (una general y una o más con puerto puntual, o varios puertos distintos): cada combinación `ip` / `ip:puerto` es una entrada independiente.
+
+### Testear el estado de un puerto puntual
+
+Si a una IP se le agrega `:puerto` (por ejemplo `10.0.0.5:20000`), el servidor deja de usar el chequeo general (ping + puertos comunes) para esa entrada y en su lugar testea específicamente **ese** puerto TCP:
+
+- **ACTIVO**: el puerto acepta conexiones (está abierto/escuchando).
+- **INACTIVO**: el puerto rechaza la conexión (cerrado), da timeout, o el host no responde.
+
+Se puede cargar igual desde la web: en el formulario "Agregar" hay un campo **Puerto (opcional)** — dejándolo vacío se comporta como antes (chequeo general por ping), completándolo (ej: `20000`) testea puntualmente ese puerto. El front muestra la dirección como `ip:puerto` para dejar claro qué se está chequeando.
 
 ### Modo de solo lectura
 
@@ -96,7 +107,7 @@ Para ocultar (y bloquear también del lado del servidor) la posibilidad de agreg
 ALLOW_IP_EDITS=false npm start
 ```
 
-Con esto el formulario "Agregar" y el botón ✕ no se muestran, y los endpoints `POST /api/ips` y `DELETE /api/ips/:ip` responden `403` aunque se los llame directamente. Sigue funcionando la consulta de estado; la lista sólo se puede modificar editando `data/ips.txt` a mano. Por defecto (`ALLOW_IP_EDITS` sin definir, o `true`) la edición está permitida.
+Con esto el formulario "Agregar" y el botón ✕ no se muestran, y los endpoints `POST /api/ips` y `DELETE /api/ips/:key` responden `403` aunque se los llame directamente. Sigue funcionando la consulta de estado; la lista sólo se puede modificar editando `data/ips.txt` a mano. Por defecto (`ALLOW_IP_EDITS` sin definir, o `true`) la edición está permitida.
 
 ## Alarma de caída (online → offline)
 

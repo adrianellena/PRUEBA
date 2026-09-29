@@ -9,6 +9,7 @@ const refreshBtn = document.getElementById('refresh-btn');
 const form = document.getElementById('add-form');
 const nameInput = document.getElementById('input-name');
 const ipInput = document.getElementById('input-ip');
+const portInput = document.getElementById('input-port');
 const formError = document.getElementById('form-error');
 const alarmToggleBtn = document.getElementById('alarm-toggle');
 const alarmBanner = document.getElementById('alarm-banner');
@@ -73,12 +74,16 @@ function stopAlarm() {
   }
 }
 
+function itemKey(item) {
+  return item.port ? `${item.ip}:${item.port}` : item.ip;
+}
+
 function checkOfflineTransitions(items) {
-  const current = new Map(items.map((item) => [item.ip, item.status]));
+  const current = new Map(items.map((item) => [itemKey(item), item.status]));
 
   if (previousStatuses) {
-    for (const [ip, status] of current) {
-      const prevStatus = previousStatuses.get(ip);
+    for (const [key, status] of current) {
+      const prevStatus = previousStatuses.get(key);
       if (prevStatus === 'ACTIVO' && status === 'INACTIVO' && alarmEnabled) {
         startAlarm();
       }
@@ -138,7 +143,7 @@ function renderList(items) {
     `;
 
     li.querySelector('.ip-name').textContent = item.name;
-    li.querySelector('.ip-address').textContent = item.ip;
+    li.querySelector('.ip-address').textContent = itemKey(item);
     li.querySelector('.status-badge').textContent = item.status;
 
     const lastSeenEl = li.querySelector('.last-seen');
@@ -152,7 +157,7 @@ function renderList(items) {
 
     const deleteBtn = li.querySelector('.delete-btn');
     if (appConfig.editableIps) {
-      deleteBtn.addEventListener('click', () => deleteIp(item.ip));
+      deleteBtn.addEventListener('click', () => deleteIp(itemKey(item)));
     } else {
       deleteBtn.remove();
     }
@@ -215,9 +220,15 @@ form.addEventListener('submit', async (event) => {
   event.preventDefault();
   const name = nameInput.value.trim();
   const ip = ipInput.value.trim();
+  const portRaw = portInput.value.trim();
 
   if (!ip) {
     showFormError('Ingresá una dirección IP');
+    return;
+  }
+
+  if (portRaw && (!Number.isInteger(Number(portRaw)) || Number(portRaw) < 1 || Number(portRaw) > 65535)) {
+    showFormError('El puerto debe ser un número entre 1 y 65535');
     return;
   }
 
@@ -225,7 +236,7 @@ form.addEventListener('submit', async (event) => {
     const res = await fetch('/api/ips', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, ip }),
+      body: JSON.stringify({ name, ip, port: portRaw || null }),
     });
 
     if (!res.ok) {
@@ -235,6 +246,7 @@ form.addEventListener('submit', async (event) => {
 
     nameInput.value = '';
     ipInput.value = '';
+    portInput.value = '';
     await fetchStatuses({ showSpinner: false });
   } catch (err) {
     showFormError(err.message);

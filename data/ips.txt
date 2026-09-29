@@ -1,5 +1,7 @@
 # Lista de IPs a monitorear
-# Formato: <ip> <nombre nemotécnico>
+# Formato: <ip>[:puerto] <nombre nemotécnico>
+# Si se indica :puerto (ej: 192.168.1.50:20000), se testea puntualmente
+# el estado de ese puerto TCP en vez del chequeo general por ping.
 # Una IP por línea. Las líneas vacías o que empiezan con # se ignoran.
 192.168.1.1 Router
 8.8.8.8 Google DNS

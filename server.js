@@ -12,7 +12,9 @@ const LAST_SEEN_FILE = path.join(__dirname, 'data', 'last-seen.json');
 const USERS_FILE = path.join(__dirname, 'data', 'users.txt');
 const FILE_HEADER =
   '# Lista de IPs a monitorear\n' +
-  '# Formato: <ip> <nombre nemotécnico>\n' +
+  '# Formato: <ip>[:puerto] <nombre nemotécnico>\n' +
+  '# Si se indica :puerto (ej: 192.168.1.50:20000), se testea puntualmente\n' +
+  '# el estado de ese puerto TCP en vez del chequeo general por ping.\n' +
   '# Una IP por línea. Las líneas vacías o que empiezan con # se ignoran.\n';
 
 // Puertos TCP comunes usados como respaldo cuando el ping ICMP
@@ -135,16 +137,43 @@ app.use(requireAuth);
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+function isValidPort(port) {
+  return Number.isInteger(port) && port >= 1 && port <= 65535;
+}
+
+// Identificador único de una entrada: la IP sola, o "ip:puerto" si se
+// especificó un puerto puntual a testear. Se usa como clave para el
+// registro de "último online", para detectar duplicados y para el borrado.
+function entryKey(entry) {
+  return entry.port ? `${entry.ip}:${entry.port}` : entry.ip;
+}
+
+// Parsea el primer token de una línea ("ip" o "ip:puerto") en sus partes.
+function parseIpPortToken(token) {
+  const colonIndex = token.indexOf(':');
+  if (colonIndex === -1) {
+    return IPV4_REGEX.test(token) ? { ip: token, port: null } : null;
+  }
+
+  const ip = token.slice(0, colonIndex);
+  const port = Number(token.slice(colonIndex + 1));
+  if (!IPV4_REGEX.test(ip) || !isValidPort(port)) return null;
+
+  return { ip, port };
+}
+
 function parseLine(line) {
   const trimmed = line.trim();
   if (!trimmed || trimmed.startsWith('#')) return null;
 
   const match = trimmed.match(/^(\S+)\s+(.+)$/);
-  const ip = match ? match[1] : trimmed;
-  const name = match ? match[2].trim() : ip;
+  const token = match ? match[1] : trimmed;
+  const name = match ? match[2].trim() : token;
 
-  if (!IPV4_REGEX.test(ip)) return null;
-  return { ip, name };
+  const parsed = parseIpPortToken(token);
+  if (!parsed) return null;
+
+  return { ip: parsed.ip, port: parsed.port, name };
 }
 
 async function loadIps() {
@@ -162,7 +191,7 @@ async function loadIps() {
 
 async function saveIps(ips) {
   await fs.mkdir(path.dirname(DATA_FILE), { recursive: true });
-  const body = ips.map((entry) => `${entry.ip} ${entry.name}`).join('\n');
+  const body = ips.map((entry) => `${entryKey(entry)} ${entry.name}`).join('\n');
   await fs.writeFile(DATA_FILE, FILE_HEADER + body + (body ? '\n' : ''));
 }
 
@@ -236,6 +265,44 @@ async function checkHost(ip) {
   };
 }
 
+// A diferencia de tcpProbe (que sólo quiere saber si el HOST responde en
+// alguno de varios puertos comunes), acá cualquier error -incluido
+// ECONNREFUSED- significa que ESE puerto puntual no está abierto.
+function checkPortOpen(host, port, timeout) {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    let settled = false;
+
+    const finish = (open) => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      resolve(open);
+    };
+
+    socket.setTimeout(timeout);
+    socket.once('connect', () => finish(true));
+    socket.once('error', () => finish(false));
+    socket.once('timeout', () => finish(false));
+
+    socket.connect(port, host);
+  });
+}
+
+async function checkPort(ip, port) {
+  const start = Date.now();
+  const open = await checkPortOpen(ip, port, TCP_TIMEOUT_MS);
+  return {
+    status: open ? 'ACTIVO' : 'INACTIVO',
+    ms: Date.now() - start,
+    method: `tcp:${port}`,
+  };
+}
+
+function checkEntry(entry) {
+  return entry.port ? checkPort(entry.ip, entry.port) : checkHost(entry.ip);
+}
+
 app.get('/api/config', (req, res) => {
   res.json({ editableIps: ALLOW_IP_EDITS });
 });
@@ -246,14 +313,15 @@ app.get('/api/ips', async (req, res) => {
     const lastSeen = await loadLastSeen();
     const results = await Promise.all(
       ips.map(async (entry) => {
-        const check = await checkHost(entry.ip);
+        const key = entryKey(entry);
+        const check = await checkEntry(entry);
         if (check.status === 'ACTIVO') {
-          lastSeen[entry.ip] = new Date().toISOString();
+          lastSeen[key] = new Date().toISOString();
         }
         return {
           ...entry,
           ...check,
-          lastOnline: lastSeen[entry.ip] || null,
+          lastOnline: lastSeen[key] || null,
           checkedAt: new Date().toISOString(),
         };
       })
@@ -271,37 +339,45 @@ app.post('/api/ips', async (req, res) => {
     return res.status(403).json({ error: 'La edición de la lista de IPs está deshabilitada' });
   }
 
-  const { name, ip } = req.body || {};
+  const { name, ip, port } = req.body || {};
 
   if (!ip || typeof ip !== 'string' || !IPV4_REGEX.test(ip.trim())) {
     return res.status(400).json({ error: 'Dirección IP inválida' });
   }
 
-  const trimmedName = (name || '').trim();
-  const trimmedIp = ip.trim();
-
-  const ips = await loadIps();
-  if (ips.some((entry) => entry.ip === trimmedIp)) {
-    return res.status(409).json({ error: 'Esa IP ya está en la lista' });
+  let parsedPort = null;
+  if (port !== undefined && port !== null && port !== '') {
+    parsedPort = Number(port);
+    if (!isValidPort(parsedPort)) {
+      return res.status(400).json({ error: 'El puerto debe ser un número entre 1 y 65535' });
+    }
   }
 
+  const trimmedName = (name || '').trim();
+  const trimmedIp = ip.trim();
   const newEntry = {
     name: trimmedName || trimmedIp,
     ip: trimmedIp,
+    port: parsedPort,
   };
+
+  const ips = await loadIps();
+  if (ips.some((entry) => entryKey(entry) === entryKey(newEntry))) {
+    return res.status(409).json({ error: 'Esa IP (y puerto) ya está en la lista' });
+  }
 
   ips.push(newEntry);
   await saveIps(ips);
   res.status(201).json(newEntry);
 });
 
-app.delete('/api/ips/:ip', async (req, res) => {
+app.delete('/api/ips/:key', async (req, res) => {
   if (!ALLOW_IP_EDITS) {
     return res.status(403).json({ error: 'La edición de la lista de IPs está deshabilitada' });
   }
 
   const ips = await loadIps();
-  const filtered = ips.filter((entry) => entry.ip !== req.params.ip);
+  const filtered = ips.filter((entry) => entryKey(entry) !== req.params.key);
 
   if (filtered.length === ips.length) {
     return res.status(404).json({ error: 'IP no encontrada' });
@@ -310,8 +386,8 @@ app.delete('/api/ips/:ip', async (req, res) => {
   await saveIps(filtered);
 
   const lastSeen = await loadLastSeen();
-  if (req.params.ip in lastSeen) {
-    delete lastSeen[req.params.ip];
+  if (req.params.key in lastSeen) {
+    delete lastSeen[req.params.key];
     await saveLastSeen();
   }
 
