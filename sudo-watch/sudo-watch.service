@@ -1,0 +1,16 @@
+[Unit]
+Description=Alerta por ntfy cuando usuarios vigilados ejecutan sudo
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/sudo-watch/config.env
+ExecStart=/usr/local/bin/sudo_watch.py
+Restart=on-failure
+RestartSec=5
+User=root
+SupplementaryGroups=systemd-journal
+
+[Install]
+WantedBy=multi-user.target
