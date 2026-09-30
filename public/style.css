@@ -1,0 +1,319 @@
+:root {
+  --bg: #0f172a;
+  --surface: #1a2333;
+  --surface-alt: #202b3f;
+  --text: #f1f5f9;
+  --text-muted: #94a3b8;
+  --active: #22c55e;
+  --inactive: #ef4444;
+  --accent: #38bdf8;
+  --border: #2b3854;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+body {
+  min-height: 100vh;
+  padding-bottom: 100px;
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 16px 12px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.topbar h1 {
+  font-size: 1.25rem;
+  margin: 0;
+}
+
+.topbar-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.icon-btn {
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 10px;
+  width: 36px;
+  height: 36px;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.icon-btn:active {
+  transform: scale(0.94);
+}
+
+.icon-btn.spinning {
+  animation: spin 0.7s linear infinite;
+}
+
+.icon-btn.muted {
+  opacity: 0.45;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.alarm-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 16px 4px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(239, 68, 68, 0.18);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: var(--inactive);
+  font-weight: 700;
+  font-size: 0.9rem;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.alarm-banner[hidden] {
+  display: none;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+.alarm-banner button {
+  flex-shrink: 0;
+  background: var(--inactive);
+  color: #2a0a0a;
+  border: none;
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+main {
+  padding: 12px 16px;
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.ip-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ip-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.status-icon {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+}
+
+.status-icon.activo {
+  background: var(--active);
+  box-shadow: 0 0 8px 1px rgba(34, 197, 94, 0.55);
+}
+
+.status-icon.inactivo {
+  background: var(--inactive);
+  box-shadow: 0 0 8px 1px rgba(239, 68, 68, 0.45);
+}
+
+.ip-info {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.ip-name {
+  font-weight: 600;
+  font-size: 1rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ip-address {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.status-change {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.status-change.inactivo {
+  color: var(--inactive);
+}
+
+.ip-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.status-badge::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.status-badge.activo {
+  color: var(--active);
+  background: rgba(34, 197, 94, 0.15);
+}
+
+.status-badge.inactivo {
+  color: var(--inactive);
+  background: rgba(239, 68, 68, 0.15);
+}
+
+.status-badge.pendiente {
+  color: var(--text-muted);
+  background: rgba(148, 163, 184, 0.12);
+}
+
+.delete-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 4px 6px;
+}
+
+.delete-btn:active {
+  color: var(--inactive);
+}
+
+.empty-state {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 32px 16px;
+}
+
+.add-form[hidden] {
+  display: none;
+}
+
+.add-form {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.add-form input {
+  flex: 1 1 120px;
+  min-width: 0;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 0.95rem;
+}
+
+.add-form input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+#input-port {
+  flex: 1 1 90px;
+}
+
+.add-form button {
+  flex: 0 0 auto;
+  background: var(--accent);
+  color: #04202f;
+  border: none;
+  border-radius: 10px;
+  padding: 12px 18px;
+  font-weight: 700;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+.add-form button:active {
+  transform: scale(0.97);
+}
+
+.form-error {
+  position: fixed;
+  bottom: 74px;
+  left: 16px;
+  right: 16px;
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--inactive);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  text-align: center;
+}

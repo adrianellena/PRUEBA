@@ -1,0 +1,4 @@
+node_modules/
+npm-debug.log*
+data/status-changes.json
+data/users.txt

@@ -1,0 +1,15 @@
+{
+  "name": "ip-status-monitor",
+  "version": "1.0.0",
+  "description": "Web app mobile-first para monitorear el estado ACTIVO/INACTIVO de una lista de direcciones IP",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "users": "node scripts/manage-users.js"
+  },
+  "dependencies": {
+    "argon2": "^0.45.1",
+    "express": "^4.19.2",
+    "ping": "^0.4.4"
+  }
+}
