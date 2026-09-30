@@ -8,7 +8,7 @@ const argon2 = require('argon2');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const DATA_FILE = path.join(__dirname, 'data', 'ips.txt');
-const LAST_SEEN_FILE = path.join(__dirname, 'data', 'last-seen.json');
+const STATUS_CHANGES_FILE = path.join(__dirname, 'data', 'status-changes.json');
 const USERS_FILE = path.join(__dirname, 'data', 'users.txt');
 const FILE_HEADER =
   '# Lista de IPs a monitorear\n' +
@@ -195,22 +195,26 @@ async function saveIps(ips) {
   await fs.writeFile(DATA_FILE, FILE_HEADER + body + (body ? '\n' : ''));
 }
 
-let lastSeenCache = null;
+// Registro persistente, por entrada, del estado con el que se la vio la
+// última vez y cuándo se detectó ese estado por primera vez ({ status,
+// changedAt }). Permite mostrar "desde cuándo" está cada IP en su estado
+// actual, sea ACTIVO o INACTIVO.
+let statusChangesCache = null;
 
-async function loadLastSeen() {
-  if (lastSeenCache) return lastSeenCache;
+async function loadStatusChanges() {
+  if (statusChangesCache) return statusChangesCache;
   try {
-    const raw = await fs.readFile(LAST_SEEN_FILE, 'utf-8');
-    lastSeenCache = JSON.parse(raw);
+    const raw = await fs.readFile(STATUS_CHANGES_FILE, 'utf-8');
+    statusChangesCache = JSON.parse(raw);
   } catch (err) {
-    lastSeenCache = {};
+    statusChangesCache = {};
   }
-  return lastSeenCache;
+  return statusChangesCache;
 }
 
-async function saveLastSeen() {
-  await fs.mkdir(path.dirname(LAST_SEEN_FILE), { recursive: true });
-  await fs.writeFile(LAST_SEEN_FILE, JSON.stringify(lastSeenCache, null, 2));
+async function saveStatusChanges() {
+  await fs.mkdir(path.dirname(STATUS_CHANGES_FILE), { recursive: true });
+  await fs.writeFile(STATUS_CHANGES_FILE, JSON.stringify(statusChangesCache, null, 2));
 }
 
 function tcpProbe(host, port, timeout) {
@@ -310,23 +314,26 @@ app.get('/api/config', (req, res) => {
 app.get('/api/ips', async (req, res) => {
   try {
     const ips = await loadIps();
-    const lastSeen = await loadLastSeen();
+    const statusChanges = await loadStatusChanges();
     const results = await Promise.all(
       ips.map(async (entry) => {
         const key = entryKey(entry);
         const check = await checkEntry(entry);
-        if (check.status === 'ACTIVO') {
-          lastSeen[key] = new Date().toISOString();
+        const previous = statusChanges[key];
+
+        if (!previous || previous.status !== check.status) {
+          statusChanges[key] = { status: check.status, changedAt: new Date().toISOString() };
         }
+
         return {
           ...entry,
           ...check,
-          lastOnline: lastSeen[key] || null,
+          lastStatusChange: statusChanges[key].changedAt,
           checkedAt: new Date().toISOString(),
         };
       })
     );
-    await saveLastSeen();
+    await saveStatusChanges();
     res.json(results);
   } catch (err) {
     console.error(err);
@@ -385,10 +392,10 @@ app.delete('/api/ips/:key', async (req, res) => {
 
   await saveIps(filtered);
 
-  const lastSeen = await loadLastSeen();
-  if (req.params.key in lastSeen) {
-    delete lastSeen[req.params.key];
-    await saveLastSeen();
+  const statusChanges = await loadStatusChanges();
+  if (req.params.key in statusChanges) {
+    delete statusChanges[req.params.key];
+    await saveStatusChanges();
   }
 
   res.status(204).end();

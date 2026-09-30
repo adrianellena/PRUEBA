@@ -109,7 +109,7 @@ function formatTime(date) {
   return date.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
-function formatLastOnline(isoString) {
+function formatDateTime(isoString) {
   const date = new Date(isoString);
   const sameDay = date.toDateString() === new Date().toDateString();
   const dateOpts = sameDay
@@ -134,7 +134,7 @@ function renderList(items) {
       <div class="ip-info">
         <div class="ip-name"></div>
         <div class="ip-address"></div>
-        <div class="last-seen"></div>
+        <div class="status-change"></div>
       </div>
       <div class="ip-actions">
         <span class="status-badge ${statusClass}"></span>
@@ -146,14 +146,11 @@ function renderList(items) {
     li.querySelector('.ip-address').textContent = itemKey(item);
     li.querySelector('.status-badge').textContent = item.status;
 
-    const lastSeenEl = li.querySelector('.last-seen');
-    if (!isOnline) {
-      lastSeenEl.textContent = item.lastOnline
-        ? `Último online: ${formatLastOnline(item.lastOnline)}`
-        : 'Sin registro de actividad';
-    } else {
-      lastSeenEl.remove();
-    }
+    const statusChangeEl = li.querySelector('.status-change');
+    statusChangeEl.classList.toggle('inactivo', !isOnline);
+    statusChangeEl.textContent = item.lastStatusChange
+      ? `Último cambio: ${formatDateTime(item.lastStatusChange)}`
+      : 'Sin registro de cambios';
 
     const deleteBtn = li.querySelector('.delete-btn');
     if (appConfig.editableIps) {

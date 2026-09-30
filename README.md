@@ -8,6 +8,7 @@ Web app mobile-first que muestra el estado **ACTIVO** / **INACTIVO** de una list
   1. **Chequeo general de host** (sin puerto puntual): intenta un **ping ICMP** (comando `ping` del sistema) y, si falla o no está disponible, hace un **fallback por TCP** contra puertos comunes (80, 443, 22, 8080, 3389, 21, 23, 445). Si alguno responde o rechaza la conexión, el host se considera activo.
   2. **Chequeo de un puerto puntual** (cuando se indica `ip:puerto`, ver más abajo): se testea *ese* puerto TCP específico — ACTIVO sólo si acepta la conexión, INACTIVO si la rechaza, da timeout o el host no responde.
 - El frontend consulta el estado cada 8 segundos y se puede refrescar manualmente.
+- Cada IP muestra la fecha y hora de su **último cambio de estado** (cuándo pasó de ACTIVO a INACTIVO o viceversa), no sólo mientras está caída — se ve en todas las tarjetas, estén online u offline.
 - La lista de IPs se guarda en `data/ips.txt`, un archivo de texto plano, y se puede editar tanto a mano como desde la misma web (agregar / eliminar), salvo que se desactive con `ALLOW_IP_EDITS` (ver más abajo). Cada IP muestra en el front su nombre nemotécnico en lugar de la dirección cruda.
 - Si una IP pasa de ACTIVO a INACTIVO, suena una alarma sonora en bucle hasta que se silencia manualmente. Se puede desactivar por completo con el botón 🔔/🔕 (la preferencia queda guardada en el navegador).
 - El acceso a toda la app (front y API) requiere iniciar sesión con un usuario y contraseña propios de la app, guardados en un **archivo de texto** (`data/users.txt`) con la contraseña **hasheada con Argon2id** — nunca en texto plano.
@@ -108,6 +109,12 @@ ALLOW_IP_EDITS=false npm start
 ```
 
 Con esto el formulario "Agregar" y el botón ✕ no se muestran, y los endpoints `POST /api/ips` y `DELETE /api/ips/:key` responden `403` aunque se los llame directamente. Sigue funcionando la consulta de estado; la lista sólo se puede modificar editando `data/ips.txt` a mano. Por defecto (`ALLOW_IP_EDITS` sin definir, o `true`) la edición está permitida.
+
+## Último cambio de estado
+
+Cada tarjeta muestra "Último cambio: `<fecha y hora>`", que indica cuándo se detectó por última vez que esa IP (o IP:puerto) pasó de ACTIVO a INACTIVO o de INACTIVO a ACTIVO — es decir, desde cuándo está en su estado actual. Mientras el estado no cambia, esa fecha se mantiene fija aunque se siga chequeando cada 8 segundos.
+
+Se guarda en `data/status-changes.json` (gitignored, es estado runtime), con un registro `{ status, changedAt }` por cada entrada. Persiste entre reinicios del servidor; si se elimina una IP de la lista, su registro también se borra.
 
 ## Alarma de caída (online → offline)
 

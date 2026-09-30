@@ -180,10 +180,14 @@ main {
   font-variant-numeric: tabular-nums;
 }
 
-.last-seen {
+.status-change {
   font-size: 0.75rem;
-  color: var(--inactive);
+  color: var(--text-muted);
   margin-top: 2px;
+}
+
+.status-change.inactivo {
+  color: var(--inactive);
 }
 
 .ip-actions {

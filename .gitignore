@@ -1,4 +1,4 @@
 node_modules/
 npm-debug.log*
-data/last-seen.json
+data/status-changes.json
 data/users.txt
